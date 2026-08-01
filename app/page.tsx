@@ -1,14 +1,34 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { runBubbleSortTrace, type SortTraceFrame } from "./lib/pyodide-client";
+import {
+  runSortTrace,
+  type SortAlgorithm,
+  type SortTraceFrame,
+} from "./lib/pyodide-client";
 import BarsVisualizer from "./components/BarsVisualizer";
 import PlaybackControls from "./components/PlaybackControls";
 
+const ALGORITHMS: { id: SortAlgorithm; label: string; code: string }[] = [
+  {
+    id: "bubble",
+    label: "Bubble Sort",
+    code: "def bubble_sort(values):\n    n = len(values)\n    for i in range(n - 1):\n        for j in range(n - i - 1):\n            if values[j] > values[j + 1]:\n                values[j], values[j + 1] = values[j + 1], values[j]\n    return values\n",
+  },
+  {
+    id: "merge",
+    label: "Merge Sort",
+    code: "def merge_sort(values, lo=0, hi=None):\n    if hi is None:\n        hi = len(values) - 1\n    if lo >= hi:\n        return values\n    mid = (lo + hi) // 2\n    merge_sort(values, lo, mid)\n    merge_sort(values, mid + 1, hi)\n    _merge(values, lo, mid, hi)\n    return values\n\ndef _merge(values, lo, mid, hi):\n    left = values[lo:mid + 1]\n    right = values[mid + 1:hi + 1]\n    i = j = 0\n    k = lo\n    while i < len(left) and j < len(right):\n        if left[i] <= right[j]:\n            values[k] = left[i]\n            i += 1\n        else:\n            values[k] = right[j]\n            j += 1\n        k += 1\n    while i < len(left):\n        values[k] = left[i]\n        i += 1\n        k += 1\n    while j < len(right):\n        values[k] = right[j]\n        j += 1\n        k += 1\n",
+  },
+  {
+    id: "quick",
+    label: "Quick Sort",
+    code: "def quick_sort(values, lo=0, hi=None):\n    if hi is None:\n        hi = len(values) - 1\n    if lo >= hi:\n        return values\n    pivot = values[hi]\n    i = lo - 1\n    for j in range(lo, hi):\n        if values[j] <= pivot:\n            i += 1\n            values[i], values[j] = values[j], values[i]\n    values[i + 1], values[hi] = values[hi], values[i + 1]\n    pivot_index = i + 1\n    quick_sort(values, lo, pivot_index - 1)\n    quick_sort(values, pivot_index + 1, hi)\n    return values\n",
+  },
+];
+
 export default function Home() {
-  const [code, setCode] = useState(
-    "def bubble_sort(values):\n    n = len(values)\n    for i in range(n - 1):\n        for j in range(n - i - 1):\n            if values[j] > values[j + 1]:\n                values[j], values[j + 1] = values[j + 1], values[j]\n    return values\n"
-  );
+  const [algorithm, setAlgorithm] = useState<SortAlgorithm>("bubble");
   const [status, setStatus] = useState<"idle" | "running" | "done" | "error">(
     "idle"
   );
@@ -18,17 +38,19 @@ export default function Home() {
   const [speed, setSpeed] = useState(200);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
+  const selected = ALGORITHMS.find((a) => a.id === algorithm)!;
+
   async function handleRun() {
     setStatus("running");
     setIsPlaying(false);
     setErrorMessage(null);
     try {
-      const trace = await runBubbleSortTrace();
+      const trace = await runSortTrace(algorithm);
       setFrames(trace);
       setFrameIndex(0);
       setStatus("done");
     } catch (error) {
-      console.error("bubble sort trace failed:", error);
+      console.error("sort trace failed:", error);
       setErrorMessage(error instanceof Error ? error.message : String(error));
       setStatus("error");
     }
@@ -56,9 +78,31 @@ export default function Home() {
         <h1 className="text-2xl font-semibold text-black dark:text-zinc-50">
           Algo Visualizer
         </h1>
+
+        <label className="flex items-center gap-2 text-sm text-zinc-600 dark:text-zinc-400">
+          Algorithm
+          <select
+            value={algorithm}
+            onChange={(event) => {
+              setAlgorithm(event.target.value as SortAlgorithm);
+              setStatus("idle");
+              setFrames([]);
+              setFrameIndex(0);
+              setIsPlaying(false);
+            }}
+            className="rounded border border-black/15 bg-transparent px-2 py-1 dark:border-white/15"
+          >
+            {ALGORITHMS.map((a) => (
+              <option key={a.id} value={a.id}>
+                {a.label}
+              </option>
+            ))}
+          </select>
+        </label>
+
         <textarea
-          value={code}
-          onChange={(event) => setCode(event.target.value)}
+          value={selected.code}
+          readOnly
           spellCheck={false}
           className="h-48 w-full rounded-lg border border-black/10 bg-white p-4 font-mono text-sm text-black outline-none dark:border-white/10 dark:bg-zinc-900 dark:text-zinc-50"
         />
@@ -73,7 +117,7 @@ export default function Home() {
         <div className="flex min-h-64 w-full flex-col justify-end gap-4 rounded-lg border border-dashed border-black/15 py-6 dark:border-white/15">
           {status === "idle" && (
             <p className="text-center text-sm text-zinc-500 dark:text-zinc-400">
-              Click Run to trace and animate a bubble sort.
+              Click Run to trace and animate {selected.label}.
             </p>
           )}
           {status === "running" && (

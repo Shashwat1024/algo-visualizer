@@ -1,8 +1,11 @@
+export type SortAlgorithm = "bubble" | "merge" | "quick";
+
 export type SortTraceFrame = {
   line: number;
   arrayState: number[];
   comparedIndices: [number, number] | null;
   swapped: boolean;
+  depth: number;
 };
 
 type WorkerResponse =
@@ -36,11 +39,11 @@ function getWorker(): Worker {
   return worker;
 }
 
-export function runBubbleSortTrace(): Promise<SortTraceFrame[]> {
+export function runSortTrace(algorithm: SortAlgorithm): Promise<SortTraceFrame[]> {
   const id = nextRequestId++;
   const request = new Promise<SortTraceFrame[]>((resolve, reject) => {
     pendingRequests.set(id, { resolve, reject });
   });
-  getWorker().postMessage({ id, type: "run-bubble-sort-trace" });
+  getWorker().postMessage({ id, type: "run-sort-trace", algorithm });
   return request;
 }
