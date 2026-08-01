@@ -4,6 +4,9 @@ All notable changes to this project are documented here, newest first. Format lo
 
 ## [Unreleased]
 
+### Changed
+- **Mono font swapped to JetBrains Mono** (2026-08-01): replaced Geist Mono with JetBrains Mono (via `next/font/google`) as the project's `--font-mono`, used by the code preview/editor areas.
+
 ### Added
 - **Phase 4 — Merge sort, quick sort, recursion depth** (2026-08-01): reference merge sort and quick sort implementations added alongside bubble sort, all through the same `sys.settrace` tracer. Recursion depth is now captured per frame via `'call'`/`'return'` events (not yet rendered, but cheap to capture now vs. retrofit later). Algorithm dropdown replaces the free-text editor for this phase — code preview is read-only, reflecting PLAN.md's "still hardcoded" scope; free-text user code lands in Phase 5. Validated the tracer module standalone against CPython (all three algorithms sort correctly; merge sort reaches depth 5, quick sort depth 6 on a 12-element input) before relying on the in-browser Pyodide run.
 - **Phase 3 — Bubble sort tracer & visualization** (2026-08-01): hardcoded bubble sort run through `sys.settrace` inside the Pyodide worker, emitting `{line, arrayState, comparedIndices, swapped}` per frame (swap detection via array diffing between consecutive line events, no manual tagging). `BarsVisualizer` renders the current frame with compare highlighting. `PlaybackControls` adds play/pause, step forward/back, scrub slider, and speed selection over the captured frame list.
