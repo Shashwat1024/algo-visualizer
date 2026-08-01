@@ -31,6 +31,10 @@ export type TraceMeta = {
   /** Entry function called, or "(module)" when the code called it itself. */
   entry: string;
   steps: number;
+  /** >1 means frames were decimated: the timeline samples every Nth step. */
+  stride: number;
+  /** Seconds spent tracing, inside the worker. */
+  elapsed: number;
 };
 
 export type TraceResult = {
@@ -87,12 +91,19 @@ function getWorker(): Worker {
 
 export function runUserTrace(
   code: string,
-  arraySize = 12
+  arraySize = 12,
+  seed?: number
 ): Promise<TraceResult> {
   const id = nextRequestId++;
   const request = new Promise<TraceResult>((resolve, reject) => {
     pendingRequests.set(id, { resolve, reject });
   });
-  getWorker().postMessage({ id, type: "run-user-trace", code, arraySize });
+  getWorker().postMessage({
+    id,
+    type: "run-user-trace",
+    code,
+    arraySize,
+    seed,
+  });
   return request;
 }

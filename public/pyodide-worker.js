@@ -18,17 +18,35 @@ function getPyodide() {
 // runaway loop fails loudly instead of spinning.
 const TRACER_MODULE_SCRIPT = `
 import sys
+import time
 import random
 import types
 from collections import deque
 
-MAX_STEPS = 20000
+# Runaway protection and payload size are separate concerns. A 500-element
+# bubble sort is ~125k legitimate line events, so the step ceiling is high and
+# a wall-clock guard does the real work of catching infinite loops quickly.
+STEP_LIMIT = 2000000
+# Generous because Pyodide runs ~3-5x slower than CPython and a 500-element
+# bubble sort is legitimately ~315k traced steps. Tracing happens in a worker,
+# so a slow run leaves the UI responsive rather than freezing the tab.
+TIME_LIMIT = 20.0
+TIME_CHECK_MASK = 8191  # test the clock every 8192 steps
+
+# Frames actually kept. Beyond this the trace is decimated rather than
+# truncated, so a long run still animates end to end at coarser resolution.
+MAX_FRAMES = 4000
+
 MAX_NODES = 200
 MAX_PANELS = 4
 USER_FILENAME = "<user_code>"
 
 
 class StepLimitExceeded(Exception):
+    pass
+
+
+class TimeLimitExceeded(Exception):
     pass
 
 
@@ -299,12 +317,32 @@ def _pick_entry(user_globals):
     return min(enumerate(candidates), key=rank)[1]
 
 
-def run_user_trace(user_code, array_size=12):
+def run_user_trace(user_code, array_size=12, seed=None):
     user_globals = {"__name__": "__user__"}
     compiled = compile(user_code, USER_FILENAME, "exec")
 
     raw = []
-    state = {"steps": 0, "depth": 0, "calls": 0}
+    state = {
+        "steps": 0,
+        "depth": 0,
+        "calls": 0,
+        "stride": 1,
+        "start": time.monotonic(),
+    }
+
+    def capture(frame):
+        captured = {}
+        for name, value in frame.f_locals.items():
+            if name.startswith("__"):
+                continue
+            snapshot = _snapshot(value)
+            if snapshot is not None:
+                captured[name] = snapshot
+        return {
+            "line": frame.f_lineno,
+            "depth": max(state["depth"], 0),
+            "vars": captured,
+        }
 
     def tracer(frame, event, arg):
         # Returning None for non-user frames keeps overhead proportional to
@@ -320,27 +358,34 @@ def run_user_trace(user_code, array_size=12):
             return tracer
         if event == "return":
             state["depth"] -= 1
+            # Decimation can drop the true last line event, so record the
+            # outermost return: it is the only place the finished state is
+            # still reachable, and it costs one snapshot per run.
+            if state["depth"] == 0:
+                raw.append(capture(frame))
             return tracer
         if event != "line":
             return tracer
 
         state["steps"] += 1
-        if state["steps"] > MAX_STEPS:
+        steps = state["steps"]
+        if steps > STEP_LIMIT:
             raise StepLimitExceeded()
+        if (steps & TIME_CHECK_MASK) == 0:
+            if time.monotonic() - state["start"] > TIME_LIMIT:
+                raise TimeLimitExceeded()
 
-        captured = {}
-        for name, value in frame.f_locals.items():
-            if name.startswith("__"):
-                continue
-            snapshot = _snapshot(value)
-            if snapshot is not None:
-                captured[name] = snapshot
+        # Skipped steps cost nothing: the snapshot, not the trace hook, is
+        # what makes large inputs expensive.
+        if steps % state["stride"] != 0:
+            return tracer
 
-        raw.append({
-            "line": frame.f_lineno,
-            "depth": max(state["depth"], 0),
-            "vars": captured,
-        })
+        raw.append(capture(frame))
+
+        if len(raw) >= MAX_FRAMES:
+            del raw[1::2]           # halve resolution, keep the timeline
+            state["stride"] *= 2
+
         return tracer
 
     entry_name = None
@@ -355,11 +400,18 @@ def run_user_trace(user_code, array_size=12):
             # the most sort-looking function with a random array.
             raw.clear()
             entry_name, entry_fn = _pick_entry(user_globals)
-            entry_fn(random.sample(range(10, 99), array_size))
+            rng = random.Random(seed) if seed is not None else random
+            entry_fn(rng.sample(range(10, max(99, array_size * 8)), array_size))
     except StepLimitExceeded:
         raise RuntimeError(
             "Step limit of {} exceeded - the code may contain an infinite loop.".format(
-                MAX_STEPS
+                STEP_LIMIT
+            )
+        )
+    except TimeLimitExceeded:
+        raise RuntimeError(
+            "Gave up after {:.0f} seconds - the code may contain an infinite loop.".format(
+                TIME_LIMIT
             )
         )
     except TypeError as exc:
@@ -456,6 +508,10 @@ def run_user_trace(user_code, array_size=12):
         "meta": {
             "entry": entry_name or "(module)",
             "steps": state["steps"],
+            # >1 means frames were decimated, so the UI can say the timeline
+            # is a sample rather than every step.
+            "stride": state["stride"],
+            "elapsed": round(time.monotonic() - state["start"], 2),
         },
     }
 `;
@@ -494,7 +550,7 @@ function ensureTracerModule(pyodide) {
 }
 
 self.onmessage = async (event) => {
-  const { id, type, code, arraySize } = event.data ?? {};
+  const { id, type, code, arraySize, seed } = event.data ?? {};
 
   if (type !== "run-user-trace") {
     return;
@@ -508,9 +564,10 @@ self.onmessage = async (event) => {
     // input is never spliced into the Python source.
     pyodide.globals.set("_user_code", code);
     pyodide.globals.set("_array_size", arraySize ?? 12);
+    pyodide.globals.set("_seed", seed ?? null);
 
     const resultProxy = pyodide.runPython(
-      "run_user_trace(_user_code, _array_size)"
+      "run_user_trace(_user_code, _array_size, _seed)"
     );
     const result = resultProxy.toJs({ dict_converter: Object.fromEntries });
     resultProxy.destroy();

@@ -41,6 +41,9 @@ const SIZES = [
   { value: "12", label: "12 items" },
   { value: "20", label: "20 items" },
   { value: "32", label: "32 items" },
+  { value: "64", label: "64 items" },
+  { value: "128", label: "128 items" },
+  { value: "500", label: "500 items" },
 ];
 
 export default function Home() {
@@ -227,11 +230,15 @@ export default function Home() {
               </Button>
               {meta && status === "done" && (
                 <p className="font-mono text-xs text-muted-foreground">
-                  {meta.entry} · {meta.steps} steps ·{" "}
+                  {meta.entry} · {meta.steps.toLocaleString()} steps in{" "}
+                  {meta.elapsed}s ·{" "}
                   <span className="text-foreground">
                     {variables.length || "no"}{" "}
                     {variables.length === 1 ? "variable" : "variables"}
                   </span>
+                  {meta.stride > 1 && (
+                    <> · timeline sampled every {meta.stride} steps</>
+                  )}
                 </p>
               )}
             </div>

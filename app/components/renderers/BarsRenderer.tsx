@@ -13,20 +13,27 @@ export default function BarsRenderer({
   const max = Math.max(...values, 1);
   const highlighted = new Set(pickIndices(scalars, values.length));
   const showLabels = values.length <= 20;
+  // Past a certain count the gaps alone would exceed the container, and
+  // per-bar transitions stop being affordable.
+  const dense = values.length > 60;
 
   if (values.length === 0) {
     return <EmptyRow />;
   }
 
   return (
-    <div className="flex h-56 w-full items-end justify-center gap-1">
+    <div
+      className={`flex h-56 w-full items-end justify-center ${
+        dense ? "gap-px" : "gap-1"
+      }`}
+    >
       {values.map((value, index) => (
         <div
           key={index}
           title={String(value)}
-          className={`flex w-full max-w-10 flex-col items-center justify-end rounded-t-md transition-all duration-150 ${
-            highlighted.has(index) ? "bg-bar-compare" : "bg-bar"
-          }`}
+          className={`flex w-full flex-col items-center justify-end ${
+            dense ? "" : "max-w-10 rounded-t-md transition-all duration-150"
+          } ${highlighted.has(index) ? "bg-bar-compare" : "bg-bar"}`}
           style={{ height: `${(value / max) * 100}%` }}
         >
           {showLabels && (
