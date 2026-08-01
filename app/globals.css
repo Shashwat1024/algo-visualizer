@@ -123,6 +123,32 @@
   --bar-compare: oklch(0.78 0.16 70);
 }
 
+/* CodeMirror ships its own chrome colors (One Dark's navy background).
+   Neutralize the surfaces so the editor sits on the app palette; token
+   colors are still supplied by the CodeMirror theme. */
+.cm-editor,
+.cm-editor .cm-gutters {
+  background-color: transparent !important;
+}
+
+.cm-editor.cm-focused {
+  outline: none !important;
+}
+
+.cm-editor .cm-gutters {
+  border-right: 1px solid var(--border) !important;
+  color: var(--muted-foreground) !important;
+}
+
+.cm-editor .cm-activeLine,
+.cm-editor .cm-activeLineGutter {
+  background-color: color-mix(
+    in oklab,
+    var(--foreground) 6%,
+    transparent
+  ) !important;
+}
+
 @layer base {
   * {
     @apply border-border outline-ring/50;

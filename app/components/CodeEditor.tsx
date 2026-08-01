@@ -24,7 +24,7 @@ export default function CodeEditor({
   const { resolvedTheme } = useTheme();
 
   return (
-    <div className="overflow-hidden rounded-lg border">
+    <div className="overflow-hidden rounded-lg border bg-muted/40">
       <CodeMirror
         value={value}
         height="288px"
