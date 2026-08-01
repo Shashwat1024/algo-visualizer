@@ -4,12 +4,14 @@ import { useEffect, useState } from "react";
 import { AlertCircleIcon, Loader2Icon, PlayIcon } from "lucide-react";
 
 import {
-  runSortTrace,
-  type SortAlgorithm,
+  runUserTrace,
   type SortTraceFrame,
+  type TraceMeta,
 } from "./lib/pyodide-client";
+import { EXAMPLES } from "./lib/examples";
 import BarsVisualizer from "./components/BarsVisualizer";
 import PlaybackControls from "./components/PlaybackControls";
+import CodeEditor from "./components/CodeEditor";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -29,56 +31,38 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 
-const ALGORITHMS: {
-  value: SortAlgorithm;
-  label: string;
-  complexity: string;
-  code: string;
-}[] = [
-  {
-    value: "bubble",
-    label: "Bubble Sort",
-    complexity: "O(n²)",
-    code: "def bubble_sort(values):\n    n = len(values)\n    for i in range(n - 1):\n        for j in range(n - i - 1):\n            if values[j] > values[j + 1]:\n                values[j], values[j + 1] = values[j + 1], values[j]\n    return values\n",
-  },
-  {
-    value: "merge",
-    label: "Merge Sort",
-    complexity: "O(n log n)",
-    code: "def merge_sort(values, lo=0, hi=None):\n    if hi is None:\n        hi = len(values) - 1\n    if lo >= hi:\n        return values\n    mid = (lo + hi) // 2\n    merge_sort(values, lo, mid)\n    merge_sort(values, mid + 1, hi)\n    _merge(values, lo, mid, hi)\n    return values\n\ndef _merge(values, lo, mid, hi):\n    left = values[lo:mid + 1]\n    right = values[mid + 1:hi + 1]\n    i = j = 0\n    k = lo\n    while i < len(left) and j < len(right):\n        if left[i] <= right[j]:\n            values[k] = left[i]\n            i += 1\n        else:\n            values[k] = right[j]\n            j += 1\n        k += 1\n    while i < len(left):\n        values[k] = left[i]\n        i += 1\n        k += 1\n    while j < len(right):\n        values[k] = right[j]\n        j += 1\n        k += 1\n",
-  },
-  {
-    value: "quick",
-    label: "Quick Sort",
-    complexity: "O(n log n) avg",
-    code: "def quick_sort(values, lo=0, hi=None):\n    if hi is None:\n        hi = len(values) - 1\n    if lo >= hi:\n        return values\n    pivot = values[hi]\n    i = lo - 1\n    for j in range(lo, hi):\n        if values[j] <= pivot:\n            i += 1\n            values[i], values[j] = values[j], values[i]\n    values[i + 1], values[hi] = values[hi], values[i + 1]\n    pivot_index = i + 1\n    quick_sort(values, lo, pivot_index - 1)\n    quick_sort(values, pivot_index + 1, hi)\n    return values\n",
-  },
+const SIZES = [
+  { value: "8", label: "8 items" },
+  { value: "12", label: "12 items" },
+  { value: "20", label: "20 items" },
+  { value: "32", label: "32 items" },
 ];
 
 export default function Home() {
-  const [algorithm, setAlgorithm] = useState<SortAlgorithm>("bubble");
+  const [code, setCode] = useState(EXAMPLES[0].code);
+  const [arraySize, setArraySize] = useState(12);
   const [status, setStatus] = useState<"idle" | "running" | "done" | "error">(
     "idle"
   );
   const [frames, setFrames] = useState<SortTraceFrame[]>([]);
+  const [meta, setMeta] = useState<TraceMeta | null>(null);
   const [frameIndex, setFrameIndex] = useState(0);
   const [isPlaying, setIsPlaying] = useState(false);
   const [speed, setSpeed] = useState(200);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
-
-  const selected = ALGORITHMS.find((a) => a.value === algorithm)!;
 
   async function handleRun() {
     setStatus("running");
     setIsPlaying(false);
     setErrorMessage(null);
     try {
-      const trace = await runSortTrace(algorithm);
-      setFrames(trace);
+      const result = await runUserTrace(code, arraySize);
+      setFrames(result.frames);
+      setMeta(result.meta);
       setFrameIndex(0);
       setStatus("done");
     } catch (error) {
-      console.error("sort trace failed:", error);
+      console.error("trace failed:", error);
       setErrorMessage(error instanceof Error ? error.message : String(error));
       setStatus("error");
     }
@@ -110,7 +94,7 @@ export default function Home() {
               Algo Visualizer
             </h1>
             <span className="hidden text-sm text-muted-foreground sm:inline">
-              Watch sorting algorithms run, step by step
+              Paste a Python sort and watch it run
             </span>
           </div>
           <ThemeToggle />
@@ -122,33 +106,49 @@ export default function Home() {
           <CardHeader>
             <div className="flex flex-wrap items-center justify-between gap-4">
               <div className="space-y-1">
-                <CardTitle>{selected.label}</CardTitle>
+                <CardTitle>Your code</CardTitle>
                 <CardDescription>
-                  Traced line-by-line in Python via Pyodide
+                  Any Python function that sorts a list of numbers
                 </CardDescription>
               </div>
               <div className="flex items-center gap-2">
-                <Badge variant="secondary" className="font-mono">
-                  {selected.complexity}
-                </Badge>
                 <Select
-                  items={ALGORITHMS}
-                  value={algorithm}
+                  items={SIZES}
+                  value={String(arraySize)}
+                  onValueChange={(value) => setArraySize(Number(value))}
+                >
+                  <SelectTrigger size="sm" aria-label="Input size">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {SIZES.map((option) => (
+                      <SelectItem key={option.value} value={option.value}>
+                        {option.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <Select
+                  items={EXAMPLES}
+                  value=""
                   onValueChange={(value) => {
-                    setAlgorithm(value as SortAlgorithm);
+                    const example = EXAMPLES.find((e) => e.value === value);
+                    if (!example) return;
+                    setCode(example.code);
                     setStatus("idle");
                     setFrames([]);
+                    setMeta(null);
                     setFrameIndex(0);
                     setIsPlaying(false);
                   }}
                 >
-                  <SelectTrigger aria-label="Select algorithm">
-                    <SelectValue />
+                  <SelectTrigger size="sm" aria-label="Load an example">
+                    <span className="text-muted-foreground">Examples</span>
                   </SelectTrigger>
                   <SelectContent>
-                    {ALGORITHMS.map((option) => (
-                      <SelectItem key={option.value} value={option.value}>
-                        {option.label}
+                    {EXAMPLES.map((example) => (
+                      <SelectItem key={example.value} value={example.value}>
+                        {example.label}
                       </SelectItem>
                     ))}
                   </SelectContent>
@@ -157,38 +157,58 @@ export default function Home() {
             </div>
           </CardHeader>
           <CardContent className="space-y-4">
-            <pre className="max-h-72 overflow-auto rounded-lg border bg-muted/40 p-4 font-mono text-[13px] leading-relaxed">
-              <code>{selected.code}</code>
-            </pre>
-            <Button onClick={handleRun} disabled={status === "running"}>
-              {status === "running" ? (
-                <>
-                  <Loader2Icon className="size-4 animate-spin" /> Tracing…
-                </>
-              ) : (
-                <>
-                  <PlayIcon className="size-4" /> Run
-                </>
+            <CodeEditor
+              value={code}
+              onChange={setCode}
+              readOnly={status === "running"}
+            />
+            <div className="flex flex-wrap items-center gap-3">
+              <Button onClick={handleRun} disabled={status === "running"}>
+                {status === "running" ? (
+                  <>
+                    <Loader2Icon className="size-4 animate-spin" /> Tracing…
+                  </>
+                ) : (
+                  <>
+                    <PlayIcon className="size-4" /> Run
+                  </>
+                )}
+              </Button>
+              {meta && status === "done" && (
+                <p className="font-mono text-xs text-muted-foreground">
+                  {meta.entry}() · visualizing{" "}
+                  <span className="text-foreground">{meta.primary}</span> ·{" "}
+                  {meta.steps} steps
+                </p>
               )}
-            </Button>
+            </div>
           </CardContent>
         </Card>
 
         <Card>
           <CardHeader>
-            <CardTitle className="text-base">Visualization</CardTitle>
-            {currentFrame && (
-              <CardDescription className="font-mono text-xs">
-                line {currentFrame.line} · depth {currentFrame.depth}
-                {currentFrame.swapped ? " · swapped" : ""}
-              </CardDescription>
-            )}
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <CardTitle className="text-base">Visualization</CardTitle>
+              {currentFrame && (
+                <div className="flex items-center gap-2">
+                  <Badge variant="secondary" className="font-mono text-xs">
+                    line {currentFrame.line}
+                  </Badge>
+                  <Badge variant="secondary" className="font-mono text-xs">
+                    depth {currentFrame.depth}
+                  </Badge>
+                  {currentFrame.swapped && (
+                    <Badge className="font-mono text-xs">changed</Badge>
+                  )}
+                </div>
+              )}
+            </div>
           </CardHeader>
           <CardContent className="space-y-6">
             <div className="flex min-h-72 flex-col justify-end">
               {status === "idle" && (
                 <p className="py-24 text-center text-sm text-muted-foreground">
-                  Press Run to trace {selected.label}.
+                  Press Run to trace your code.
                 </p>
               )}
               {status === "running" && (
@@ -198,9 +218,11 @@ export default function Home() {
                 </div>
               )}
               {status === "error" && (
-                <div className="flex flex-col items-center gap-2 py-24 text-destructive">
-                  <AlertCircleIcon className="size-5" />
-                  <p className="text-sm">{errorMessage}</p>
+                <div className="flex flex-col items-center gap-2 px-6 py-24 text-destructive">
+                  <AlertCircleIcon className="size-5 shrink-0" />
+                  <p className="text-center font-mono text-xs break-all">
+                    {errorMessage}
+                  </p>
                 </div>
               )}
               {status === "done" && currentFrame && (

@@ -1,5 +1,3 @@
-export type SortAlgorithm = "bubble" | "merge" | "quick";
-
 export type SortTraceFrame = {
   line: number;
   arrayState: number[];
@@ -8,15 +6,29 @@ export type SortTraceFrame = {
   depth: number;
 };
 
+export type TraceMeta = {
+  /** Name of the function the tracer chose as the entry point. */
+  entry: string;
+  /** Name of the variable being visualized, or "(input)" for in-place sorts. */
+  primary: string;
+  /** Number of traced line events, for comparison against the step limit. */
+  steps: number;
+};
+
+export type TraceResult = {
+  frames: SortTraceFrame[];
+  meta: TraceMeta;
+};
+
 type WorkerResponse =
-  | { id: number; ok: true; frames: SortTraceFrame[] }
+  | ({ id: number; ok: true } & TraceResult)
   | { id: number; ok: false; error: string };
 
 let worker: Worker | null = null;
 let nextRequestId = 0;
 const pendingRequests = new Map<
   number,
-  { resolve: (frames: SortTraceFrame[]) => void; reject: (error: Error) => void }
+  { resolve: (result: TraceResult) => void; reject: (error: Error) => void }
 >();
 
 function getWorker(): Worker {
@@ -30,7 +42,7 @@ function getWorker(): Worker {
       if (!pending) return;
       pendingRequests.delete(id);
       if (event.data.ok) {
-        pending.resolve(event.data.frames);
+        pending.resolve({ frames: event.data.frames, meta: event.data.meta });
       } else {
         pending.reject(new Error(event.data.error));
       }
@@ -39,11 +51,14 @@ function getWorker(): Worker {
   return worker;
 }
 
-export function runSortTrace(algorithm: SortAlgorithm): Promise<SortTraceFrame[]> {
+export function runUserTrace(
+  code: string,
+  arraySize = 12
+): Promise<TraceResult> {
   const id = nextRequestId++;
-  const request = new Promise<SortTraceFrame[]>((resolve, reject) => {
+  const request = new Promise<TraceResult>((resolve, reject) => {
     pendingRequests.set(id, { resolve, reject });
   });
-  getWorker().postMessage({ id, type: "run-sort-trace", algorithm });
+  getWorker().postMessage({ id, type: "run-user-trace", code, arraySize });
   return request;
 }
