@@ -1,15 +1,17 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { AlertCircleIcon, Loader2Icon, PlayIcon } from "lucide-react";
 
 import {
   runUserTrace,
-  type SortTraceFrame,
+  type TraceFrame,
   type TraceMeta,
+  type VariableInfo,
 } from "./lib/pyodide-client";
+import { buildPanelStructures } from "./lib/structures";
 import { EXAMPLES } from "./lib/examples";
-import BarsVisualizer from "./components/BarsVisualizer";
+import VariablePanel from "./components/VariablePanel";
 import PlaybackControls from "./components/PlaybackControls";
 import CodeEditor from "./components/CodeEditor";
 import { ThemeToggle } from "@/components/theme-toggle";
@@ -44,7 +46,8 @@ export default function Home() {
   const [status, setStatus] = useState<"idle" | "running" | "done" | "error">(
     "idle"
   );
-  const [frames, setFrames] = useState<SortTraceFrame[]>([]);
+  const [frames, setFrames] = useState<TraceFrame[]>([]);
+  const [variables, setVariables] = useState<VariableInfo[]>([]);
   const [meta, setMeta] = useState<TraceMeta | null>(null);
   const [frameIndex, setFrameIndex] = useState(0);
   const [isPlaying, setIsPlaying] = useState(false);
@@ -58,6 +61,7 @@ export default function Home() {
     try {
       const result = await runUserTrace(code, arraySize);
       setFrames(result.frames);
+      setVariables(result.variables);
       setMeta(result.meta);
       setFrameIndex(0);
       setStatus("done");
@@ -84,6 +88,12 @@ export default function Home() {
 
   const hasFrames = frames.length > 0;
   const currentFrame = hasFrames ? frames[frameIndex] : null;
+
+  // Layouts are derived from the whole trace, so they stay put while scrubbing.
+  const structures = useMemo(
+    () => buildPanelStructures(frames, variables),
+    [frames, variables]
+  );
 
   return (
     <div className="flex flex-1 flex-col">
@@ -176,9 +186,11 @@ export default function Home() {
               </Button>
               {meta && status === "done" && (
                 <p className="font-mono text-xs text-muted-foreground">
-                  {meta.entry}() · visualizing{" "}
-                  <span className="text-foreground">{meta.primary}</span> ·{" "}
-                  {meta.steps} steps
+                  {meta.entry} · {meta.steps} steps ·{" "}
+                  <span className="text-foreground">
+                    {variables.length || "no"}{" "}
+                    {variables.length === 1 ? "variable" : "variables"}
+                  </span>
                 </p>
               )}
             </div>
@@ -197,15 +209,12 @@ export default function Home() {
                   <Badge variant="secondary" className="font-mono text-xs">
                     depth {currentFrame.depth}
                   </Badge>
-                  {currentFrame.swapped && (
-                    <Badge className="font-mono text-xs">changed</Badge>
-                  )}
                 </div>
               )}
             </div>
           </CardHeader>
           <CardContent className="space-y-6">
-            <div className="flex min-h-72 flex-col justify-end">
+            <div className="flex min-h-72 flex-col justify-center">
               {status === "idle" && (
                 <p className="py-24 text-center text-sm text-muted-foreground">
                   Press Run to trace your code.
@@ -225,8 +234,27 @@ export default function Home() {
                   </p>
                 </div>
               )}
-              {status === "done" && currentFrame && (
-                <BarsVisualizer frame={currentFrame} />
+              {status === "done" && currentFrame && variables.length === 0 && (
+                <p className="py-24 text-center text-sm text-muted-foreground">
+                  Traced {frames.length} steps, but found no array, graph, tree,
+                  stack, or queue to visualize.
+                </p>
+              )}
+              {status === "done" && currentFrame && variables.length > 0 && (
+                <div
+                  className={`grid gap-4 ${
+                    variables.length > 1 ? "sm:grid-cols-2" : "grid-cols-1"
+                  }`}
+                >
+                  {variables.map((variable) => (
+                    <VariablePanel
+                      key={variable.name}
+                      variable={variable}
+                      frame={currentFrame}
+                      structure={structures[variable.name]}
+                    />
+                  ))}
+                </div>
               )}
             </div>
 

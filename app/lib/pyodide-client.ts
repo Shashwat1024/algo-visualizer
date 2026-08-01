@@ -1,22 +1,41 @@
-export type SortTraceFrame = {
+export type VariableRole = "array" | "stack" | "queue" | "graph" | "tree";
+
+export type TreeNode = { id: string; label: string; parent: string | null };
+
+export type Snapshot =
+  | {
+      kind: "list";
+      items: (number | string)[];
+      numeric: boolean;
+      hint: string | null;
+    }
+  | { kind: "graph"; nodes: string[]; edges: [string, string][] }
+  | { kind: "tree"; nodes: TreeNode[] }
+  | { kind: "set"; items: string[] }
+  | { kind: "scalar"; value: number | string };
+
+export type TraceFrame = {
   line: number;
-  arrayState: number[];
-  comparedIndices: [number, number] | null;
-  swapped: boolean;
   depth: number;
+  /** Structural variables, each rendered in its own panel. */
+  panels: Record<string, Snapshot>;
+  /** Set variables, used as highlight sources (e.g. `visited`). */
+  sets: Record<string, string[]>;
+  /** Scalar locals, used for index highlighting and "current node". */
+  scalars: Record<string, number | string>;
 };
 
+export type VariableInfo = { name: string; role: VariableRole };
+
 export type TraceMeta = {
-  /** Name of the function the tracer chose as the entry point. */
+  /** Entry function called, or "(module)" when the code called it itself. */
   entry: string;
-  /** Name of the variable being visualized, or "(input)" for in-place sorts. */
-  primary: string;
-  /** Number of traced line events, for comparison against the step limit. */
   steps: number;
 };
 
 export type TraceResult = {
-  frames: SortTraceFrame[];
+  frames: TraceFrame[];
+  variables: VariableInfo[];
   meta: TraceMeta;
 };
 
@@ -42,7 +61,11 @@ function getWorker(): Worker {
       if (!pending) return;
       pendingRequests.delete(id);
       if (event.data.ok) {
-        pending.resolve({ frames: event.data.frames, meta: event.data.meta });
+        pending.resolve({
+          frames: event.data.frames,
+          variables: event.data.variables,
+          meta: event.data.meta,
+        });
       } else {
         pending.reject(new Error(event.data.error));
       }

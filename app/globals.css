@@ -41,6 +41,7 @@
   --color-card: var(--card);
   --color-bar: var(--bar);
   --color-bar-compare: var(--bar-compare);
+  --color-bar-visited: var(--bar-visited);
   --radius-sm: calc(var(--radius) * 0.6);
   --radius-md: calc(var(--radius) * 0.8);
   --radius-lg: var(--radius);
@@ -85,6 +86,7 @@
   --sidebar-ring: oklch(0.708 0 0);
   --bar: oklch(0.55 0.02 260);
   --bar-compare: oklch(0.72 0.17 65);
+  --bar-visited: oklch(0.6 0.12 165);
 }
 
 .dark {
@@ -121,6 +123,7 @@
   --sidebar-ring: oklch(0.556 0 0);
   --bar: oklch(0.72 0.02 260);
   --bar-compare: oklch(0.78 0.16 70);
+  --bar-visited: oklch(0.72 0.13 165);
 }
 
 /* CodeMirror ships its own chrome colors (One Dark's navy background).

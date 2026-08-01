@@ -1,5 +1,7 @@
 /** Starter snippets loaded into the editor. The tracer does not depend on
- *  these — any pasted function that sorts a list of numbers works. */
+ *  these — any pasted code works. A sorting function on its own is called
+ *  automatically with a random array; anything else (graphs, trees) should
+ *  build its own input and call itself, as the examples below do. */
 export const EXAMPLES: { value: string; label: string; code: string }[] = [
   {
     value: "bubble",
@@ -97,6 +99,94 @@ def _merge(values, lo, mid, hi):
         values[k] = right[j]
         j += 1
         k += 1
+`,
+  },
+  {
+    value: "bfs",
+    label: "BFS (graph)",
+    code: `from collections import deque
+
+graph = {
+    "A": ["B", "C"],
+    "B": ["D", "E"],
+    "C": ["F"],
+    "D": [],
+    "E": ["F"],
+    "F": ["G"],
+    "G": [],
+}
+
+def bfs(graph, start):
+    visited = set()
+    queue = deque([start])
+    order = []
+    while queue:
+        node = queue.popleft()
+        if node in visited:
+            continue
+        visited.add(node)
+        order.append(node)
+        for neighbour in graph[node]:
+            queue.append(neighbour)
+    return order
+
+bfs(graph, "A")
+`,
+  },
+  {
+    value: "dfs",
+    label: "DFS (graph)",
+    code: `graph = {
+    "A": ["B", "C"],
+    "B": ["D", "E"],
+    "C": ["F"],
+    "D": [],
+    "E": ["F"],
+    "F": ["G"],
+    "G": [],
+}
+
+def dfs(graph, start):
+    visited = set()
+    stack = [start]
+    order = []
+    while stack:
+        node = stack.pop()
+        if node in visited:
+            continue
+        visited.add(node)
+        order.append(node)
+        for neighbour in reversed(graph[node]):
+            stack.append(neighbour)
+    return order
+
+dfs(graph, "A")
+`,
+  },
+  {
+    value: "inorder",
+    label: "Tree traversal",
+    code: `class Node:
+    def __init__(self, val, left=None, right=None):
+        self.val = val
+        self.left = left
+        self.right = right
+
+root = Node(8,
+    Node(3, Node(1), Node(6, Node(4), Node(7))),
+    Node(10, None, Node(14, Node(13))))
+
+def inorder(node, out=None):
+    if out is None:
+        out = []
+    if node is None:
+        return out
+    inorder(node.left, out)
+    out.append(node.val)
+    inorder(node.right, out)
+    return out
+
+inorder(root)
 `,
   },
 ];
