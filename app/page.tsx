@@ -1,15 +1,18 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { AlertCircleIcon, Loader2Icon, PlayIcon } from "lucide-react";
+import { CheckIcon, Link2Icon, Loader2Icon, PlayIcon } from "lucide-react";
 
 import {
   runUserTrace,
+  TraceError,
   type TraceFrame,
   type TraceMeta,
   type VariableInfo,
 } from "./lib/pyodide-client";
 import { buildPanelStructures } from "./lib/structures";
+import { buildShareUrl, readSharedState } from "./lib/share";
+import TraceErrorAlert from "./components/TraceErrorAlert";
 import { EXAMPLES } from "./lib/examples";
 import VariablePanel from "./components/VariablePanel";
 import PlaybackControls from "./components/PlaybackControls";
@@ -53,11 +56,36 @@ export default function Home() {
   const [isPlaying, setIsPlaying] = useState(false);
   const [speed, setSpeed] = useState(200);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [errorLine, setErrorLine] = useState<number | null>(null);
+  const [copied, setCopied] = useState(false);
+
+  // A shared link carries the snippet itself. Load it into the editor but do
+  // not auto-run: that would pull down the Pyodide runtime unprompted.
+  useEffect(() => {
+    readSharedState().then((shared) => {
+      if (shared.code) setCode(shared.code);
+      if (shared.arraySize) setArraySize(shared.arraySize);
+    });
+  }, []);
+
+  async function handleShare() {
+    const url = await buildShareUrl(code, arraySize);
+    window.history.replaceState(null, "", url);
+    try {
+      await navigator.clipboard.writeText(url);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch {
+      // Clipboard can be blocked by permissions; the URL bar now holds the
+      // link either way, so this is not worth surfacing as an error.
+    }
+  }
 
   async function handleRun() {
     setStatus("running");
     setIsPlaying(false);
     setErrorMessage(null);
+    setErrorLine(null);
     try {
       const result = await runUserTrace(code, arraySize);
       setFrames(result.frames);
@@ -68,6 +96,7 @@ export default function Home() {
     } catch (error) {
       console.error("trace failed:", error);
       setErrorMessage(error instanceof Error ? error.message : String(error));
+      setErrorLine(error instanceof TraceError ? error.line : null);
       setStatus("error");
     }
   }
@@ -185,6 +214,17 @@ export default function Home() {
                   </>
                 )}
               </Button>
+              <Button variant="outline" onClick={handleShare}>
+                {copied ? (
+                  <>
+                    <CheckIcon className="size-4" /> Link copied
+                  </>
+                ) : (
+                  <>
+                    <Link2Icon className="size-4" /> Share
+                  </>
+                )}
+              </Button>
               {meta && status === "done" && (
                 <p className="font-mono text-xs text-muted-foreground">
                   {meta.entry} · {meta.steps} steps ·{" "}
@@ -227,12 +267,9 @@ export default function Home() {
                   <p className="text-sm">Loading Pyodide and tracing…</p>
                 </div>
               )}
-              {status === "error" && (
-                <div className="flex flex-col items-center gap-2 px-6 py-24 text-destructive">
-                  <AlertCircleIcon className="size-5 shrink-0" />
-                  <p className="text-center font-mono text-xs break-all">
-                    {errorMessage}
-                  </p>
+              {status === "error" && errorMessage && (
+                <div className="px-2 py-8">
+                  <TraceErrorAlert message={errorMessage} line={errorLine} />
                 </div>
               )}
               {status === "done" && currentFrame && variables.length === 0 && (

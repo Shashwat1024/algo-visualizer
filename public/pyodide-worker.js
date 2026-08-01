@@ -460,6 +460,32 @@ def run_user_trace(user_code, array_size=12):
     }
 `;
 
+/**
+ * Pyodide surfaces a full Python traceback. Users care about the final
+ * "ExceptionType: message" line and which of *their* lines caused it, so pull
+ * those out and drop the interpreter frames.
+ */
+function describeError(error) {
+  const raw = String(error?.message ?? error ?? "Unknown error");
+  const lines = raw
+    .trim()
+    .split("\n")
+    .map((line) => line.trim())
+    .filter(Boolean);
+
+  const message = lines.length > 0 ? lines[lines.length - 1] : raw;
+
+  // Last user frame in the traceback is the most relevant one.
+  const frames = [...raw.matchAll(/File "<user_code>", line (\d+)/g)];
+  let line = frames.length > 0 ? Number(frames[frames.length - 1][1]) : null;
+
+  // SyntaxError reports its position in the message instead of a frame.
+  const inline = message.match(/<user_code>, line (\d+)/);
+  if (inline) line = Number(inline[1]);
+
+  return { message, line };
+}
+
 function ensureTracerModule(pyodide) {
   if (!tracerModuleLoaded) {
     pyodide.runPython(TRACER_MODULE_SCRIPT);
@@ -491,6 +517,7 @@ self.onmessage = async (event) => {
 
     self.postMessage({ id, ok: true, ...result });
   } catch (error) {
-    self.postMessage({ id, ok: false, error: String(error) });
+    const { message, line } = describeError(error);
+    self.postMessage({ id, ok: false, error: message, line });
   }
 };

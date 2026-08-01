@@ -39,9 +39,20 @@ export type TraceResult = {
   meta: TraceMeta;
 };
 
+/** Error carrying the user's own line number, when the traceback named one. */
+export class TraceError extends Error {
+  readonly line: number | null;
+
+  constructor(message: string, line: number | null) {
+    super(message);
+    this.name = "TraceError";
+    this.line = line;
+  }
+}
+
 type WorkerResponse =
   | ({ id: number; ok: true } & TraceResult)
-  | { id: number; ok: false; error: string };
+  | { id: number; ok: false; error: string; line: number | null };
 
 let worker: Worker | null = null;
 let nextRequestId = 0;
@@ -67,7 +78,7 @@ function getWorker(): Worker {
           meta: event.data.meta,
         });
       } else {
-        pending.reject(new Error(event.data.error));
+        pending.reject(new TraceError(event.data.error, event.data.line));
       }
     };
   }
