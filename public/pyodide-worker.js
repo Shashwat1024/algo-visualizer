@@ -558,6 +558,10 @@ self.onmessage = async (event) => {
 
   try {
     const pyodide = await getPyodide();
+
+    // Everything from here to postMessage is synchronous (runPython blocks),
+    // so two in-flight requests - a race sends both at once - cannot
+    // interleave their globals. Do not introduce an await below this line.
     ensureTracerModule(pyodide);
 
     // Pass code through globals rather than string interpolation so user

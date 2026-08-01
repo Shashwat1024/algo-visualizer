@@ -91,6 +91,30 @@ export function pickIndices(
   return valid.slice(0, 2).map(([, value]) => value);
 }
 
+/**
+ * How many times the main array actually changed. Counted from kept frames,
+ * so when a trace is decimated this is a sample rather than an exact total —
+ * fine for comparing two runs that were decimated the same way.
+ */
+export function countWrites(
+  frames: TraceFrame[],
+  variables: VariableInfo[]
+): number {
+  const target = variables.find((variable) => variable.role === "array");
+  if (!target) return 0;
+
+  let writes = 0;
+  let previous: string | null = null;
+  for (const frame of frames) {
+    const snapshot = frame.panels[target.name];
+    if (snapshot?.kind !== "list") continue;
+    const current = snapshot.items.join(",");
+    if (previous !== null && current !== previous) writes += 1;
+    previous = current;
+  }
+  return writes;
+}
+
 /** Node ids marked as seen, gathered from every set variable in the frame. */
 export function collectVisited(frame: TraceFrame): Set<string> {
   const visited = new Set<string>();

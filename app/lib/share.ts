@@ -71,23 +71,34 @@ export async function decodeCode(param: string): Promise<string | null> {
 
 export async function buildShareUrl(
   code: string,
-  arraySize: number
+  arraySize: number,
+  challenger?: string | null
 ): Promise<string> {
   const url = new URL(window.location.href);
   url.search = "";
   url.searchParams.set("c", await encodeCode(code));
   url.searchParams.set("n", String(arraySize));
+  // A second snippet is what makes a link a race, so no separate mode flag.
+  if (challenger) {
+    url.searchParams.set("d", await encodeCode(challenger));
+  }
   return url.toString();
 }
 
-export type SharedState = { code: string | null; arraySize: number | null };
+export type SharedState = {
+  code: string | null;
+  challenger: string | null;
+  arraySize: number | null;
+};
 
 export async function readSharedState(): Promise<SharedState> {
   const params = new URLSearchParams(window.location.search);
   const encoded = params.get("c");
+  const encodedChallenger = params.get("d");
   const size = Number(params.get("n"));
   return {
     code: encoded ? await decodeCode(encoded) : null,
+    challenger: encodedChallenger ? await decodeCode(encodedChallenger) : null,
     arraySize: Number.isFinite(size) && size > 0 ? size : null,
   };
 }
