@@ -4,6 +4,9 @@ All notable changes to this project are documented here, newest first. Format lo
 
 ## [Unreleased]
 
+### Added
+- **shadcn/ui component system + dark/light mode** (2026-08-01): initialized shadcn/ui (Base UI primitives, Tailwind v4, `new-york` style) and rebuilt the interface around `Card`, `Button`, `Select`, `Slider`, `Badge`, and `Separator` instead of hand-rolled markup. Added a sticky header with a `next-themes` light/dark toggle (defaults to dark, follows system). Playback controls now use icon buttons and a real slider; the visualization surfaces the current frame's line number, recursion depth, and swap state. Introduced `--bar` / `--bar-compare` theme tokens so bar highlighting is legible in both themes rather than hardcoded zinc/amber.
+
 ### Changed
 - **Mono font swapped to JetBrains Mono** (2026-08-01): replaced Geist Mono with JetBrains Mono (via `next/font/google`) as the project's `--font-mono`, used by the code preview/editor areas.
 

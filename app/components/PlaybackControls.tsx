@@ -1,3 +1,29 @@
+"use client";
+
+import {
+  PauseIcon,
+  PlayIcon,
+  SkipBackIcon,
+  SkipForwardIcon,
+} from "lucide-react";
+
+import { Button } from "@/components/ui/button";
+import { Slider } from "@/components/ui/slider";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+
+const SPEEDS = [
+  { value: "400", label: "0.5x" },
+  { value: "200", label: "1x" },
+  { value: "80", label: "2x" },
+  { value: "30", label: "4x" },
+];
+
 export default function PlaybackControls({
   frameIndex,
   frameCount,
@@ -18,55 +44,68 @@ export default function PlaybackControls({
   onSpeedChange: (speed: number) => void;
 }) {
   return (
-    <div className="flex w-full flex-col gap-3">
-      <input
-        type="range"
+    <div className="flex w-full flex-col gap-4">
+      <Slider
         min={0}
         max={Math.max(frameCount - 1, 0)}
-        value={frameIndex}
-        onChange={(event) => onScrub(Number(event.target.value))}
-        className="w-full"
+        value={[frameIndex]}
+        onValueChange={(value) =>
+          onScrub(Array.isArray(value) ? value[0] : value)
+        }
       />
-      <div className="flex items-center justify-between gap-4">
+      <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-2">
-          <button
+          <Button
+            variant="outline"
+            size="icon"
+            aria-label="Step backward"
             onClick={() => onStep(-1)}
             disabled={frameIndex === 0}
-            className="rounded-full border border-black/15 px-3 py-1.5 text-sm disabled:opacity-40 dark:border-white/15"
           >
-            ◀ Step
-          </button>
-          <button
-            onClick={onTogglePlay}
-            className="rounded-full bg-foreground px-4 py-1.5 text-sm font-medium text-background hover:bg-[#383838] dark:hover:bg-[#ccc]"
-          >
-            {isPlaying ? "Pause" : "Play"}
-          </button>
-          <button
+            <SkipBackIcon className="size-4" />
+          </Button>
+          <Button onClick={onTogglePlay} className="min-w-24">
+            {isPlaying ? (
+              <>
+                <PauseIcon className="size-4" /> Pause
+              </>
+            ) : (
+              <>
+                <PlayIcon className="size-4" /> Play
+              </>
+            )}
+          </Button>
+          <Button
+            variant="outline"
+            size="icon"
+            aria-label="Step forward"
             onClick={() => onStep(1)}
-            disabled={frameIndex === frameCount - 1}
-            className="rounded-full border border-black/15 px-3 py-1.5 text-sm disabled:opacity-40 dark:border-white/15"
+            disabled={frameIndex >= frameCount - 1}
           >
-            Step ▶
-          </button>
+            <SkipForwardIcon className="size-4" />
+          </Button>
         </div>
-        <div className="flex items-center gap-2 text-sm text-zinc-500 dark:text-zinc-400">
-          <span>
-            Frame {frameIndex + 1} / {frameCount}
+
+        <div className="flex items-center gap-4">
+          <span className="font-mono text-xs tabular-nums text-muted-foreground">
+            {frameIndex + 1} / {frameCount}
           </span>
-          <label className="flex items-center gap-1.5">
-            Speed
-            <select
-              value={speed}
-              onChange={(event) => onSpeedChange(Number(event.target.value))}
-              className="rounded border border-black/15 bg-transparent px-1.5 py-1 dark:border-white/15"
-            >
-              <option value={400}>0.5x</option>
-              <option value={200}>1x</option>
-              <option value={80}>2x</option>
-              <option value={30}>4x</option>
-            </select>
-          </label>
+          <Select
+            items={SPEEDS}
+            value={String(speed)}
+            onValueChange={(value) => onSpeedChange(Number(value))}
+          >
+            <SelectTrigger size="sm" aria-label="Playback speed">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {SPEEDS.map((option) => (
+                <SelectItem key={option.value} value={option.value}>
+                  {option.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
         </div>
       </div>
     </div>
