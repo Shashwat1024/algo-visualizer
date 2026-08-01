@@ -124,13 +124,20 @@ export function collectVisited(frame: TraceFrame): Set<string> {
   return visited;
 }
 
-/** Scalars whose value names a node in the structure - the "current" node. */
+/**
+ * Scalars whose value names a node in the structure - the "current" node.
+ *
+ * Loop counters are excluded deliberately: when node ids are numeric (an
+ * adjacency matrix labels them 0..n-1) an ordinary `i` or `j` collides with a
+ * node id and would light up an unrelated node on almost every frame.
+ */
 export function collectCurrent(
   frame: TraceFrame,
   nodeIds: Set<string>
 ): Set<string> {
   const current = new Set<string>();
-  for (const value of Object.values(frame.scalars)) {
+  for (const [name, value] of Object.entries(frame.scalars)) {
+    if (INDEX_PRIORITY.includes(name)) continue;
     const label = String(value);
     if (nodeIds.has(label)) current.add(label);
   }

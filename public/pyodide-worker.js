@@ -7,6 +7,12 @@ function getPyodide() {
   if (!pyodideReadyPromise) {
     pyodideReadyPromise = loadPyodide({
       indexURL: "https://cdn.jsdelivr.net/pyodide/v0.28.3/full/",
+    }).catch((error) => {
+      // Do not cache the failure: a transient network problem would otherwise
+      // make every later attempt reuse the same rejected promise, so Run could
+      // never recover without a page reload.
+      pyodideReadyPromise = null;
+      throw error;
     });
   }
   return pyodideReadyPromise;
@@ -269,6 +275,34 @@ def _role_for(series):
     return "other"
 
 
+def _series_by_name(frames):
+    """Per-variable snapshot series, carrying the last known value forward so
+    a variable that is out of scope on a frame still has a value."""
+    names = set()
+    for item in frames:
+        names.update(item["vars"].keys())
+
+    result = {}
+    for name in names:
+        series = []
+        last = None
+        for item in frames:
+            if name in item["vars"]:
+                last = item["vars"][name]
+            series.append(last)
+        result[name] = series
+    return result
+
+
+def _roles_from_frames(frames):
+    roles = {}
+    for name, series in _series_by_name(frames).items():
+        present = [s for s in series if s is not None]
+        if present:
+            roles[name] = _role_for(present)
+    return roles
+
+
 def _transitions(series):
     return sum(1 for a, b in zip(series, series[1:]) if a != b)
 
@@ -383,6 +417,12 @@ def run_user_trace(user_code, array_size=12, seed=None):
         raw.append(capture(frame))
 
         if len(raw) >= MAX_FRAMES:
+            # Access patterns live between adjacent steps, so once frames are
+            # sampled a push/pop pair can straddle the gap and a stack starts
+            # looking like an array. Classify from the full-resolution window
+            # while we still have it, keeping only the resulting role strings.
+            if state["stride"] == 1:
+                state["early_roles"] = _roles_from_frames(raw)
             del raw[1::2]           # halve resolution, keep the timeline
             state["stride"] *= 2
 
@@ -415,7 +455,10 @@ def run_user_trace(user_code, array_size=12, seed=None):
             )
         )
     except TypeError as exc:
-        if entry_name:
+        # Only a signature mismatch, where the body never started, should be
+        # relabelled. If any line was traced the TypeError came from inside the
+        # user's own code and its real message is what they need to see.
+        if entry_name and not raw:
             raise RuntimeError(
                 "Could not run {}(values): {}".format(entry_name, exc)
             )
@@ -426,26 +469,17 @@ def run_user_trace(user_code, array_size=12, seed=None):
     if not raw:
         raise RuntimeError("No lines were traced - nothing ran.")
 
-    # Build a per-variable series, carrying the last known value forward so a
-    # variable that is out of scope on a given frame still renders.
-    names = set()
-    for item in raw:
-        names.update(item["vars"].keys())
+    series_by_name = _series_by_name(raw)
 
-    series_by_name = {}
-    for name in names:
-        series = []
-        last = None
-        for item in raw:
-            if name in item["vars"]:
-                last = item["vars"][name]
-            series.append(last)
-        series_by_name[name] = series
-
+    # Roles measured before any decimation win, since sampled frames cannot
+    # show a push/pop pair that happened between them.
+    early_roles = state.get("early_roles", {})
     roles = {}
     for name, series in series_by_name.items():
         present = [s for s in series if s is not None]
-        roles[name] = _role_for(present) if present else "other"
+        roles[name] = early_roles.get(
+            name, _role_for(present) if present else "other"
+        )
 
     # Panels are the structural variables; sets and scalars ride along as
     # highlight sources rather than getting their own view.

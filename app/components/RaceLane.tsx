@@ -1,5 +1,6 @@
 "use client";
 
+import { useMemo } from "react";
 import { FlagIcon } from "lucide-react";
 
 import type { TraceResult } from "../lib/pyodide-client";
@@ -26,7 +27,11 @@ export default function RaceLane({
   const clamped = Math.min(frameIndex, result.frames.length - 1);
   const frame = result.frames[clamped];
   const finished = frameIndex >= result.frames.length - 1;
-  const writes = countWrites(result.frames, result.variables);
+  // Scans the whole trace, so it must not rerun on every playback tick.
+  const writes = useMemo(
+    () => countWrites(result.frames, result.variables),
+    [result]
+  );
 
   return (
     <div className="space-y-3 rounded-lg border p-4">

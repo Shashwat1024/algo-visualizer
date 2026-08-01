@@ -58,12 +58,28 @@ type WorkerResponse =
   | ({ id: number; ok: true } & TraceResult)
   | { id: number; ok: false; error: string; line: number | null };
 
+/** Ceiling on a single request. The worker has its own 20s trace guard, but
+ *  that only fires between line events - a single long-running call, or a
+ *  worker that dies outright, would otherwise hang the UI indefinitely. */
+const REQUEST_TIMEOUT_MS = 120000;
+
 let worker: Worker | null = null;
 let nextRequestId = 0;
 const pendingRequests = new Map<
   number,
   { resolve: (result: TraceResult) => void; reject: (error: Error) => void }
 >();
+
+/** Fail every in-flight request and drop the worker so the next run rebuilds
+ *  it. Without this a dead worker leaves promises pending forever. */
+function failAll(message: string) {
+  for (const pending of pendingRequests.values()) {
+    pending.reject(new TraceError(message, null));
+  }
+  pendingRequests.clear();
+  worker?.terminate();
+  worker = null;
+}
 
 function getWorker(): Worker {
   if (!worker) {
@@ -85,6 +101,16 @@ function getWorker(): Worker {
         pending.reject(new TraceError(event.data.error, event.data.line));
       }
     };
+    // Fires when the worker cannot start at all - offline, blocked CDN, or a
+    // module that fails to evaluate.
+    worker.onerror = () => {
+      failAll(
+        "Could not start the Python runtime. Check your connection and try again."
+      );
+    };
+    worker.onmessageerror = () => {
+      failAll("The Python runtime sent a message that could not be read.");
+    };
   }
   return worker;
 }
@@ -96,8 +122,33 @@ export function runUserTrace(
 ): Promise<TraceResult> {
   const id = nextRequestId++;
   const request = new Promise<TraceResult>((resolve, reject) => {
-    pendingRequests.set(id, { resolve, reject });
+    const timer = setTimeout(() => {
+      if (!pendingRequests.has(id)) return;
+      pendingRequests.delete(id);
+      // The worker is stuck mid-run and cannot be interrupted from here, so
+      // discard it rather than leaving a wedged runtime in place.
+      worker?.terminate();
+      worker = null;
+      reject(
+        new TraceError(
+          "Timed out waiting for the trace. A single statement may be running forever.",
+          null
+        )
+      );
+    }, REQUEST_TIMEOUT_MS);
+
+    pendingRequests.set(id, {
+      resolve: (result) => {
+        clearTimeout(timer);
+        resolve(result);
+      },
+      reject: (error) => {
+        clearTimeout(timer);
+        reject(error);
+      },
+    });
   });
+
   getWorker().postMessage({
     id,
     type: "run-user-trace",
