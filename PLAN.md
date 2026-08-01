@@ -2,7 +2,9 @@
 
 **Vision:** A web-hosted visualizer where a user pastes real algorithm code and sees it animate — starting with sorting algorithms, ending with a general "paste any algorithm, auto-detect the data structure, auto-visualize" system.
 
-**Deployment target:** Next.js (App Router) on Vercel. All code execution happens client-side via Pyodide (Python-in-WASM) — no sandboxed backend needed for running untrusted code. The only server-side call is a single LLM classification step added in Phase 6.
+**Deployment target:** Next.js (App Router) on Vercel. All code execution happens client-side via Pyodide (Python-in-WASM) — no sandboxed backend needed for running untrusted code. The app is **fully client-side**: there are no API routes and no server compute.
+
+> **Removed:** an earlier draft included a Phase 6 that called an LLM server-side to classify each variable's data-structure role. It was dropped — the same classification is achievable by inspecting values at runtime in the tracer, which is deterministic, free, offline, and avoids introducing an API key and a server dependency into an otherwise static app. Structure detection now lives in Phase 6 (Generic Animation Engine).
 
 ---
 
@@ -35,22 +37,15 @@
 - Pyodide-executed Python is ~3-5x slower than native CPython; `sys.settrace` firing on every line adds further overhead. Cap iteration counts / add a step-limit safeguard for user-submitted code.
 - Load Pyodide lazily (on first "Run" click, inside the worker), not on page load.
 
-### Allowed APIs — Next.js / Vercel / Anthropic
+### Allowed APIs — Next.js / Vercel
 
 | API | Signature / usage | Source |
 |---|---|---|
-| Route handler | `app/api/classify/route.ts` exporting `async function POST(request: Request)`, read body via `await request.json()`, return via `Response.json(...)` | nextjs.org/docs/app/api-reference/file-conventions/route |
-| Runtime selection | `export const runtime = 'nodejs' \| 'edge'` (default `nodejs`) | nextjs.org/docs/app/api-reference/file-conventions/route-segment-config |
-| Anthropic SDK | `npm install @anthropic-ai/sdk`; `const client = new Anthropic()` (reads `ANTHROPIC_API_KEY` from env) | Anthropic `claude-api` skill docs |
-| Structured output | `client.messages.create({ model, max_tokens, messages, output_config: { format: { type: "json_schema", schema } } })` — guarantees valid JSON per schema | Anthropic `claude-api` skill docs |
-| Env vars | Set in Vercel Project → Settings → Environment Variables; read via `process.env.ANTHROPIC_API_KEY` in Node runtime | vercel.com/docs/environment-variables |
-| Deploy | Connect GitHub repo on vercel.com/new → auto-deploy on push; zero config needed for mixed static+API-route Next.js apps | vercel.com/docs/getting-started-with-vercel |
-
-**Recommendation:** Use default Node.js runtime (not Edge) for the classify route — Vercel now recommends Node.js over Edge for most cases, and `@anthropic-ai/sdk` needs full Node compat.
+| Static assets | Files in `public/` are served from the site root; the Pyodide worker lives here so it loads as a real module worker without bundler interference | nextjs.org/docs/app/api-reference/file-conventions/public-folder |
+| Deploy | Connect GitHub repo on vercel.com/new → auto-deploy on push; zero config needed for a static Next.js app | vercel.com/docs/getting-started-with-vercel |
 
 **Anti-patterns to avoid:**
-- Do NOT use the deprecated `output_format` top-level parameter — use `output_config.format`.
-- Do NOT put the Anthropic API key in client-side code or `NEXT_PUBLIC_*` env vars — server-side route only.
+- Do NOT add API routes or server compute — the app is deliberately fully client-side, which keeps it deployable as static output and means untrusted user code never touches a server.
 
 ---
 
@@ -128,75 +123,39 @@
 - A deliberately infinite loop is caught by the step-limit and surfaced as an error, not a hung tab.
 
 **Anti-pattern guards:**
-- Do not attempt full static analysis/AST parsing here — heuristic runtime detection (which variable is a list that mutates) is sufficient for sorting-only scope and is what Phase 6 will supersede anyway.
+- Do not attempt full static analysis/AST parsing here — heuristic runtime detection (which variable is a list that mutates) is sufficient for sorting-only scope and is generalized in Phase 6.
 
 ---
 
-## Phase 6: LLM-Assisted Structure Detection (the real differentiator)
+## Phase 6: Generic Animation Engine — Graph, Tree, Stack Primitives
 
 **What to implement:**
-- `app/api/classify/route.ts` per Phase 0's exact pattern: `POST` handler, Node runtime, `@anthropic-ai/sdk`, `output_config.format` with a JSON Schema like:
-  ```json
-  {
-    "type": "object",
-    "properties": {
-      "variables": {
-        "type": "array",
-        "items": {
-          "type": "object",
-          "properties": {
-            "name": {"type": "string"},
-            "role": {"type": "string", "enum": ["array", "graph_adjacency", "tree", "stack", "queue", "scalar", "other"]}
-          },
-          "required": ["name", "role"],
-          "additionalProperties": false
-        }
-      },
-      "event_mapping": {
-        "type": "array",
-        "items": {
-          "type": "object",
-          "properties": {
-            "line_pattern": {"type": "string"},
-            "event_type": {"type": "string", "enum": ["compare", "swap", "visit", "enqueue", "dequeue", "insert", "remove"]}
-          },
-          "required": ["line_pattern", "event_type"]
-        }
-      }
-    },
-    "required": ["variables", "event_mapping"]
-  }
-  ```
-- Client sends the user's pasted code to this route once (before running), stores the classification result, and uses `role` to pick which visualization primitive (from Phase 7) renders each variable.
-- `ANTHROPIC_API_KEY` set in Vercel env vars, never exposed client-side.
-
-**Verification checklist:**
-- Submitting a graph BFS/DFS snippet returns `role: "graph_adjacency"` for the adjacency structure.
-- Submitting a binary tree traversal returns `role: "tree"`.
-- API key confirmed absent from client bundle (check Network tab / build output).
-
----
-
-## Phase 7: Generic Animation Engine — Graph, Tree, Stack Primitives
-
-**What to implement:**
-- Extend the Phase 3 diff-based playback engine to a plugin-style set of renderers keyed by `role`: `BarsRenderer`, `GraphRenderer` (D3 force-directed), `TreeRenderer` (D3 tree layout), `StackRenderer` (box stack).
-- Generic tracer updated to capture *any* variable's state per frame (not just the one "primary array"), keyed by name, so the classification from Phase 6 can route each variable to its renderer.
-- Wire `event_mapping` from Phase 6 to renderer-specific highlight behavior (e.g., `visit` → highlight node, `enqueue` → animate box appearing).
+- **Runtime structure detection** (replaces the dropped LLM classification step). In the tracer, assign each captured variable a `role` by inspecting its actual value:
+  - `list` of numbers → `array`
+  - `dict` mapping keys → lists/sets of keys, or a square 0/1 matrix → `graph_adjacency`
+  - object with `left`/`right`/`children` attributes, or nested dicts with those keys → `tree`
+  - `collections.deque`, or a list mutated via `pop(0)`/`popleft` → `queue`
+  - list mutated only via `append`/`pop()` at the tail → `stack`
+  - `int`/`float`/`str` → `scalar`
+  Detection runs per variable on the values already snapshotted per frame, so it costs no extra execution.
+- Extend the Phase 3 diff-based playback engine to a plugin-style set of renderers keyed by `role`: `BarsRenderer` (exists), `GraphRenderer` (D3 force-directed), `TreeRenderer` (D3 tree layout), `StackRenderer` (box stack).
+- Generic tracer updated to capture *any* variable's state per frame (not just the one "primary array"), keyed by name, so each variable can be routed to its renderer.
+- Derive highlight events from frame-to-frame diffs rather than a line-pattern mapping: a key appearing in a `visited` set → `visit`, a tail append → `push`/`enqueue`, a head removal → `dequeue`.
 
 **Verification checklist:**
 - BFS/DFS on a graph animates node visits correctly.
 - A tree traversal (in-order/pre-order) animates node visits on a rendered tree.
 - Sorting algorithms from Phase 3-5 still work unchanged (regression check).
+- Structure detection is exercised directly against sample values (adjacency dict, tree node, deque) rather than only through the UI.
 
 ---
 
-## Phase 8: Polish
+## Phase 7: Polish
 
 **What to implement:**
 - Shareable permalink: serialize `{code, trace}` (or just `code`, re-tracing on load) into a URL param or a lightweight KV store (Vercel KV / Upstash) for a shortened link.
 - Algorithm racing (optional, from earlier brainstorm): run two pasted algorithms on the same input side-by-side with live comparison/swap counters.
-- Error states: syntax errors in pasted code, unsupported constructs, classification failures — all surfaced clearly in the UI rather than silent failures.
+- Error states: syntax errors in pasted code, unsupported constructs, undetectable structures — all surfaced clearly in the UI rather than silent failures.
 
 ---
 
@@ -204,5 +163,5 @@
 
 1. **Cross-browser check**: Pyodide + Web Workers on Chrome, Firefox, Safari (Safari has historically had WASM/worker quirks — explicitly test).
 2. **Performance check**: large inputs (e.g. 500-element array) don't freeze the UI; step-limit safeguard fires correctly on runaway code.
-3. **Doc-conformance check**: grep the codebase for `output_format` (deprecated, should not appear — must be `output_config.format`), confirm no `ANTHROPIC_API_KEY` references outside server-side route files, confirm Pyodide worker uses `{ type: "module" }`.
-4. **Regression pass**: all algorithms from every phase still animate correctly after Phase 7's generalization.
+3. **Doc-conformance check**: confirm the Pyodide worker is constructed with `{ type: "module" }`, and that the app still builds with no API routes and no server-only env vars (it should deploy as fully static).
+4. **Regression pass**: all algorithms from every phase still animate correctly after Phase 6's generalization.
