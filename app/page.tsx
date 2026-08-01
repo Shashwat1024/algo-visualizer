@@ -104,7 +104,7 @@ export default function Home() {
               Algo Visualizer
             </h1>
             <span className="hidden text-sm text-muted-foreground sm:inline">
-              Paste a Python sort and watch it run
+              Paste Python, watch the data move
             </span>
           </div>
           <ThemeToggle />
@@ -118,7 +118,8 @@ export default function Home() {
               <div className="space-y-1">
                 <CardTitle>Your code</CardTitle>
                 <CardDescription>
-                  Any Python function that sorts a list of numbers
+                  Arrays, graphs, trees, stacks and queues are detected
+                  automatically
                 </CardDescription>
               </div>
               <div className="flex items-center gap-2">
