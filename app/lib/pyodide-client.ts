@@ -1,17 +1,19 @@
-export type TraceFrame = {
+export type SortTraceFrame = {
   line: number;
-  locals: Record<string, unknown>;
+  arrayState: number[];
+  comparedIndices: [number, number] | null;
+  swapped: boolean;
 };
 
 type WorkerResponse =
-  | { id: number; ok: true; trace: TraceFrame[] }
+  | { id: number; ok: true; frames: SortTraceFrame[] }
   | { id: number; ok: false; error: string };
 
 let worker: Worker | null = null;
 let nextRequestId = 0;
 const pendingRequests = new Map<
   number,
-  { resolve: (trace: TraceFrame[]) => void; reject: (error: Error) => void }
+  { resolve: (frames: SortTraceFrame[]) => void; reject: (error: Error) => void }
 >();
 
 function getWorker(): Worker {
@@ -25,7 +27,7 @@ function getWorker(): Worker {
       if (!pending) return;
       pendingRequests.delete(id);
       if (event.data.ok) {
-        pending.resolve(event.data.trace);
+        pending.resolve(event.data.frames);
       } else {
         pending.reject(new Error(event.data.error));
       }
@@ -34,11 +36,11 @@ function getWorker(): Worker {
   return worker;
 }
 
-export function runTraceSpike(): Promise<TraceFrame[]> {
+export function runBubbleSortTrace(): Promise<SortTraceFrame[]> {
   const id = nextRequestId++;
-  const request = new Promise<TraceFrame[]>((resolve, reject) => {
+  const request = new Promise<SortTraceFrame[]>((resolve, reject) => {
     pendingRequests.set(id, { resolve, reject });
   });
-  getWorker().postMessage({ id, type: "run-trace-spike" });
+  getWorker().postMessage({ id, type: "run-bubble-sort-trace" });
   return request;
 }
